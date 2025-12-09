@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Team Art — Interactive Typing & Countdown</title>
+  <meta name="description" content="Polished interactive page with typing keyboard simulation, countdown to next update, contacts and footer typing (Persian & English)." />
+  <style>
+    :root{
+      --bg1:#060608; --bg2:#141418; --accent:#00e6e6;
+      --kbd:#0f1013; --key:#252529; --key-active:#3f4348;
+      --text:#eaf6f6; --muted:rgba(234,246,246,0.72);
+      --card: rgba(255,255,255,0.02);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2));color:var(--text);overflow:hidden}
+    body{display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px}
+    /* subtle animated particles canvas fills background */
+    canvas#bgcanvas{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0.35;filter:blur(0.6px)}
+    .wrap{position:relative;z-index:5;width:100%;max-width:1080px;text-align:center;padding:36px 20px 240px}
+    /* typing area */
+    .typing-area{margin:0 auto;font-size:2.4rem;font-weight:700;line-height:1;min-height:3.2rem;white-space:nowrap;overflow:hidden;border-right:3px solid rgba(255,255,255,0.95);padding:10px 16px;border-radius:10px;background:linear-gradient(180deg,var(--card), rgba(255,255,255,0.008));backdrop-filter:blur(6px);box-shadow:0 18px 50px rgba(0,0,0,0.6);transition:opacity .5s}
+    .typing-area.small{font-size:1.5rem;min-height:2.2rem}
+    .typing-area.hidden-cursor{border-right-color:transparent}
+    /* keyboard */
+    .keyboard{position:fixed;left:0;right:0;bottom:0;height:230px;background:var(--kbd);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;padding:16px 12px 32px;gap:8px;box-shadow:0 -26px 80px rgba(0,0,0,0.6);transition:opacity .8s,transform .8s;z-index:10}
+    .keyboard.hidden{opacity:0;transform:translateY(20px);pointer-events:none}
+    .key{width:56px;height:56px;background:var(--key);color:var(--text);display:flex;align-items:center;justify-content:center;border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,0.5);font-weight:700;user-select:none;transition:transform .08s,background .12s; text-transform:uppercase}
+    .key.small{width:46px;height:46px;font-size:.92rem}
+    .key.space{width:320px;border-radius:12px}
+    .key.wide{width:110px}
+    .key.active{transform:translateY(5px);background:var(--key-active);box-shadow:none}
+    /* countdown card */
+    .countdown{margin-top:18px;font-size:1.85rem;padding:16px 22px;border-radius:12px;backdrop-filter:blur(6px);background:linear-gradient(180deg,var(--card), rgba(255,255,255,0.008));box-shadow:0 14px 40px rgba(0,0,0,0.5);opacity:0;visibility:hidden;transform:translateY(8px);transition:all .9s}
+    .countdown.active{opacity:1;visibility:visible;transform:translateY(0)}
+    .count-row{font-size:1.05rem;color:var(--muted);margin-bottom:8px}
+    .count-values{display:flex;align-items:center;gap:14px;justify-content:center;font-weight:800;color:var(--accent)}
+    .count-pill{background:rgba(255,255,255,0.02);padding:8px 12px;border-radius:10px;min-width:80px}
+    /* circular progress */
+    .ring{width:96px;height:96px;margin:8px auto}
+    /* contacts */
+    .contacts{position:fixed;bottom:108px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:12;opacity:0;visibility:hidden;transition:all .6s}
+    .contacts.show{opacity:1;visibility:visible}
+    .contact{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:rgba(0,136,204,0.08);text-decoration:none;color:var(--text);font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,0.45)}
+    .tg-icon{width:18px;height:18px;background:url('https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg') no-repeat center/contain;filter:grayscale(100%) brightness(0) invert(1)}
+    /* footer typing */
+    .footer-typing{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);font-size:.95rem;color:var(--muted);border-right:2px solid rgba(255,255,255,0.9);padding-right:6px;white-space:nowrap;overflow:hidden;max-width:90%;z-index:14;visibility:hidden}
+    /* utility top-right controls */
+    .top-controls{position:fixed;top:12px;right:14px;display:flex;gap:10px;z-index:20}
+    .btn{background:rgba(255,255,255,0.03);color:var(--text);border:1px solid rgba(255,255,255,0.03);padding:8px 10px;border-radius:8px;cursor:pointer;font-weight:700;backdrop-filter:blur(6px)}
+    .btn:active{transform:translateY(1px)}
+    /* responsive */
+    @media (max-width:760px){
+      .typing-area{font-size:1.6rem;min-height:2.4rem}
+      .key{width:44px;height:44px}.key.space{width:200px}.keyboard{height:200px;padding-bottom:18px}
+      .count-values{flex-direction:column;gap:8px}
+      .ring{width:72px;height:72px}
+      .contacts{bottom:80px}
+    }
+  </style>
+</head>
+<body>
+  <!-- animated background canvas -->
+  <canvas id="bgcanvas" aria-hidden="true"></canvas>
+
+  <!-- small UI controls -->
+  <div class="top-controls" aria-hidden="false">
+    <button id="soundToggle" class="btn" title="Toggle typing sound">🔈 Sound</button>
+    <button id="themeToggle" class="btn" title="Toggle subtle contrast">Theme</button>
+  </div>
+
+  <div class="wrap" role="main" aria-live="polite">
+    <div id="typing" class="typing-area" aria-label="Typing simulation"></div>
+
+    <div id="countdown" class="countdown" aria-hidden="true">
+      <div class="count-row">Countdown to next team update:</div>
+
+      <div class="count-values" aria-hidden="false">
+        <div class="count-pill"><span id="days">--</span><div style="font-size:.9rem;color:var(--muted)">Days</div></div>
+        <div class="count-pill"><span id="hours">--</span><div style="font-size:.9rem;color:var(--muted)">Hours</div></div>
+        <div class="count-pill"><span id="mins">--</span><div style="font-size:.9rem;color:var(--muted)">Minutes</div></div>
+      </div>
+
+      <!-- circular progress visual -->
+      <div class="ring" aria-hidden="true">
+        <svg viewBox="0 0 100 100" width="100%" height="100%">
+          <circle cx="50" cy="50" r="44" stroke="rgba(255,255,255,0.04)" stroke-width="12" fill="none"></circle>
+          <circle id="progressCircle" cx="50" cy="50" r="44" stroke="url(#grad)" stroke-width="12" fill="none" stroke-linecap="round" transform="rotate(-90 50 50)"></circle>
+          <defs>
+            <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#00e6e6"/>
+              <stop offset="100%" stop-color="#6de0ff"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- keyboard -->
+  <div id="keyboard" class="keyboard" aria-hidden="false" aria-label="On-screen keyboard">
+    <div class="key small" data-key="q">q</div><div class="key small" data-key="w">w</div><div class="key small" data-key="e">e</div><div class="key small" data-key="r">r</div><div class="key small" data-key="t">t</div><div class="key small" data-key="y">y</div><div class="key small" data-key="u">u</div><div class="key small" data-key="i">i</div><div class="key small" data-key="o">o</div><div class="key small" data-key="p">p</div>
+    <div style="width:100%;height:8px"></div>
+    <div class="key small" data-key="a">a</div><div class="key small" data-key="s">s</div><div class="key small" data-key="d">d</div><div class="key small" data-key="f">f</div><div class="key small" data-key="g">g</div><div class="key small" data-key="h">h</div><div class="key small" data-key="j">j</div><div class="key small" data-key="k">k</div><div class="key small" data-key="l">l</div>
+    <div style="width:100%;height:8px"></div>
+    <div class="key wide" data-key="shift">Shift</div><div class="key small" data-key="z">z</div><div class="key small" data-key="x">x</div><div class="key small" data-key="c">c</div><div class="key small" data-key="v">v</div><div class="key small" data-key="b">b</div><div class="key small" data-key="n">n</div><div class="key small" data-key="m">m</div><div class="key wide" data-key="backspace">⌫</div>
+    <div style="width:100%;height:8px"></div>
+    <div class="key space" data-key=" "> </div>
+  </div>
+
+  <!-- contacts (labels only) -->
+  <div id="contacts" class="contacts" aria-hidden="true">
+    <a class="contact" id="ownerLink" href="https://t.me/Abolwin" target="_blank" rel="noopener noreferrer" title="Contact Owner"><span class="tg-icon" aria-hidden="true"></span><span>Owner</span></a>
+    <a class="contact" id="supportLink" href="https://t.me/Idofss" target="_blank" rel="noopener noreferrer" title="Contact Support"><span class="tg-icon" aria-hidden="true"></span><span>Support</span></a>
+  </div>
+
+  <div id="footerTyping" class="footer-typing" aria-hidden="true"></div>
+
+  <script>
+    /* ===========================
+       Configuration (edit if needed)
+       - NEXT_UPDATE can be set to a specific date/time:
+         const NEXT_UPDATE = new Date('2025-12-31T23:59:00');
+       - By default it's 5 days from page load for demo.
+       ============================*/
+    const NEXT_UPDATE = new Date(Date.now() + 5*24*60*60*1000); // default 5 days ahead
+    // END config
+
+    // small helpers
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const typingEl = document.getElementById('typing');
+    const keyboardEl = document.getElementById('keyboard');
+    const keyEls = Array.from(keyboardEl.querySelectorAll('.key'));
+    const countdownEl = document.getElementById('countdown');
+    const daysEl = document.getElementById('days');
+    const hoursEl = document.getElementById('hours');
+    const minsEl = document.getElementById('mins');
+    const contactsEl = document.getElementById('contacts');
+    const footerEl = document.getElementById('footerTyping');
+    const progressCircle = document.getElementById('progressCircle');
+    const bgcanvas = document.getElementById('bgcanvas');
+
+    // phrases
+    const phrases = [
+      "Welcome",
+      "To Team Art",
+      "Until the next update of Team Art"
+    ];
+
+    // audio: small click for typing (optional, toggled)
+    let soundEnabled = false;
+    let audioCtx = null;
+    function playClick(){
+      if(!soundEnabled) return;
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 1200 + Math.random()*80;
+      g.gain.value = 0.0001;
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.02, now + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+      o.start(now);
+      o.stop(now + 0.11);
+    }
+
+    document.getElementById('soundToggle').addEventListener('click', ()=>{
+      soundEnabled = !soundEnabled;
+      document.getElementById('soundToggle').textContent = soundEnabled ? '🔊 Sound' : '🔈 Sound';
+      if(soundEnabled && !audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    });
+
+    // theme toggle: subtle invert effect for contrast
+    let darkAlt = false;
+    document.getElementById('themeToggle').addEventListener('click', ()=>{
+      darkAlt = !darkAlt;
+      document.documentElement.style.setProperty('--bg1', darkAlt ? '#071217' : '#060608');
+      document.documentElement.style.setProperty('--bg2', darkAlt ? '#1b1220' : '#141418');
+      document.getElementById('themeToggle').textContent = darkAlt ? '🌙 Theme' : 'Theme';
+    });
+
+    // background particles (light, performant)
+    (function initBG(){
+      const ctx = bgcanvas.getContext('2d');
+      let w=0,h=0, particles=[];
+      function resize(){
+        w = bgcanvas.width = innerWidth;
+        h = bgcanvas.height = innerHeight;
+        particles = Array.from({length: Math.max(18, Math.floor(w*h/90000))}, (_,i)=>{
+          return {x: Math.random()*w, y: Math.random()*h, r: 0.6+Math.random()*1.8, vx: (Math.random()-0.5)*0.15, vy: (Math.random()-0.5)*0.2, alpha: 0.2+Math.random()*0.6};
+        });
+      }
+      function frame(){
+        ctx.clearRect(0,0,w,h);
+        for(const p of particles){
+          p.x += p.vx; p.y += p.vy;
+          if(p.x < -10) p.x = w+10;
+          if(p.x > w+10) p.x = -10;
+          if(p.y < -10) p.y = h+10;
+          if(p.y > h+10) p.y = -10;
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(150,200,255,${p.alpha})`;
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+          ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        requestAnimationFrame(frame);
+      }
+      addEventListener('resize', resize);
+      resize(); frame();
+    })();
+
+    // press key visual
+    function pressKeyVisual(ch){
+      const keyChar = (ch === ' ') ? ' ' : String(ch).toLowerCase();
+      const el = keyEls.find(k => k.dataset.key === keyChar);
+      if(el){
+        el.classList.add('active');
+        setTimeout(()=>el.classList.remove('active'), 90 + Math.random()*40);
+      }
+    }
+    function pressBackVisual(){
+      const el = keyEls.find(k => k.dataset.key === 'backspace');
+      if(el){
+        el.classList.add('active');
+        setTimeout(()=>el.classList.remove('active'), 120);
+      }
+    }
+
+    // typing & deleting helpers
+    async function typeText(text, speed=90){
+      for(let i=0;i<text.length;i++){
+        const ch = text[i];
+        pressKeyVisual(ch);
+        playClick();
+        typingEl.textContent += ch;
+        await sleep(speed + (Math.random()*30 - 10));
+      }
+    }
+    async function deleteChars(count, speed=48){
+      for(let i=0;i<count;i++){
+        pressBackVisual();
+        playClick();
+        typingEl.textContent = typingEl.textContent.slice(0,-1);
+        await sleep(speed + (Math.random()*22));
+      }
+    }
+
+    // countdown visuals: values + circular progress
+    const circleRadius = 44;
+    const circumference = 2 * Math.PI * circleRadius;
+    progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
+    progressCircle.style.strokeDashoffset = `${circumference}`;
+
+    let totalDuration = Math.max(1, NEXT_UPDATE - Date.now()); // ms, avoid zero
+    function updateCountdownNow(){
+      const now = Date.now();
+      let diff = Math.max(0, NEXT_UPDATE - now);
+      const days = Math.floor(diff / (1000*60*60*24));
+      diff -= days * (1000*60*60*24);
+      const hours = Math.floor(diff / (1000*60*60));
+      diff -= hours * (1000*60*60);
+      const mins = Math.floor(diff / (1000*60));
+      daysEl.textContent = String(days).padStart(2,'0');
+      hoursEl.textContent = String(hours).padStart(2,'0');
+      minsEl.textContent = String(mins).padStart(2,'0');
+
+      // progress ring: remaining/total
+      const remaining = Math.max(0, NEXT_UPDATE - now);
+      const frac = Math.min(1, remaining / totalDuration);
+      const offset = circumference * frac;
+      // animate smoothly
+      requestAnimationFrame(()=> progressCircle.style.strokeDashoffset = String(offset));
+      if(remaining <= 0){
+        daysEl.textContent = '00'; hoursEl.textContent='00'; minsEl.textContent='00';
+        // small celebratory burst
+        confettiBurst();
+        return true;
+      }
+      return false;
+    }
+
+    // small confetti burst (subtle)
+    function confettiBurst(){
+      const confCanvas = document.createElement('canvas');
+      confCanvas.style.position='fixed'; confCanvas.style.left=0; confCanvas.style.top=0; confCanvas.style.zIndex=60; confCanvas.width = innerWidth; confCanvas.height = innerHeight;
+      document.body.appendChild(confCanvas);
+      const ctx = confCanvas.getContext('2d');
+      const pieces = Array.from({length:30},()=>({
+        x: Math.random()*innerWidth, y: -10,
+        vx: (Math.random()-0.5)*6, vy: 2+Math.random()*4,
+        rot: Math.random()*360, vr: (Math.random()-0.5)*10,
+        w:6+Math.random()*8, h:8+Math.random()*8,
+        color: ['#6de0ff','#00e6e6','#7bffd6','#ffd36e'][Math.floor(Math.random()*4)]
+      }));
+      let t=0;
+      function ani(){
+        ctx.clearRect(0,0,confCanvas.width,confCanvas.height);
+        for(const p of pieces){
+          p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.rot += p.vr;
+          ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot*Math.PI/180);
+          ctx.fillStyle=p.color; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+          ctx.restore();
+        }
+        t++;
+        if(t<160) requestAnimationFrame(ani);
+        else confCanvas.remove();
+      }
+      ani();
+    }
+
+    // footer typing loop (Persian then English) - starts after keyboard fades
+    async function footerLoop(){
+      const list = ["تمام حقوق نزد مالک تیم محفوظ است AB","All rights reserved to the owner of the team AB"];
+      footerEl.style.visibility = 'visible';
+      footerEl.setAttribute('aria-hidden','false');
+      while(true){
+        for(const txt of list){
+          footerEl.textContent = '';
+          for(let i=0;i<txt.length;i++){
+            footerEl.textContent += txt[i];
+            await sleep(36);
+          }
+          await sleep(1200);
+          for(let i=0;i<txt.length;i++){
+            footerEl.textContent = footerEl.textContent.slice(0,-1);
+            await sleep(24);
+          }
+          await sleep(300);
+        }
+      }
+    }
+
+    // main orchestration
+    async function runSequence(){
+      typingEl.style.visibility = 'visible';
+      typingEl.classList.remove('hidden-cursor');
+
+      // 1) Welcome
+      await typeText(phrases[0], 110);
+      await sleep(620);
+      await deleteChars(phrases[0].length, 50);
+      await sleep(320);
+
+      // 2) To Team Art
+      await typeText(phrases[1], 95);
+      await sleep(620);
+      await deleteChars(phrases[1].length, 50);
+      await sleep(320);
+
+      // 3) Last phrase typed fully
+      await typeText(phrases[2], 85);
+      await sleep(700);
+
+      // fade keyboard, reveal countdown and contacts
+      keyboardEl.classList.add('hidden');
+      await sleep(700);
+      countdownEl.classList.add('active');
+      contactsEl.classList.add('show');
+      contactsEl.setAttribute('aria-hidden','false');
+
+      // initialize countdown visuals
+      totalDuration = Math.max(1, NEXT_UPDATE - Date.now()); // recalc
+      updateCountdownNow();
+      const interval = setInterval(()=>{
+        const done = updateCountdownNow();
+        if(done) clearInterval(interval);
+      }, 15000); // update values every 15s (ring animates via rAF)
+
+      // start footer typing
+      footerLoop().catch(()=>{});
+
+      // loop delete/type last phrase
+      while(true){
+        await deleteChars(phrases[2].length, 45);
+        await sleep(420);
+        await typeText(phrases[2], 85);
+        await sleep(1400);
+      }
+    }
+
+    // start
+    runSequence().catch(err=>console.error(err));
+
+    // accessibility: hide cursor on blur
+    addEventListener('blur', ()=> typingEl.classList.add('hidden-cursor'));
+    addEventListener('focus', ()=> typingEl.classList.remove('hidden-cursor'));
+
+    // keyboard click hint: allow user to manually toggle sound/preview by tapping keys (optional)
+    keyEls.forEach(k => {
+      k.addEventListener('mousedown', ()=> {
+        k.classList.add('active'); setTimeout(()=>k.classList.remove('active'),150);
+      });
+    });
+  </script>
+</body>
+</html>
